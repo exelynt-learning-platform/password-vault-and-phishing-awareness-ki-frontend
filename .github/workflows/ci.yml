@@ -1,0 +1,38 @@
+name: ci-workflow
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: No code yet
+        if: hashFiles('package.json') == ''
+        run: echo "No package.json yet, nothing to build or test."
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: hashFiles('package.json') != ''
+        with:
+          node-version: 20
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+      - if: hashFiles('package.json') != ''
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      # Needs "test": "vitest run" and @vitest/coverage-v8 in package.json.
+      - if: hashFiles('package.json') != ''
+        run: npx vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary
+      - name: Coverage of the new lines is at least 80%
+        if: github.event_name == 'pull_request' && hashFiles('package.json') != ''
+        run: |
+          pip install diff-cover==9.2.0
+          diff-cover coverage/lcov.info --compare-branch=origin/${{ github.base_ref }} --fail-under=80
